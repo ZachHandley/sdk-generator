@@ -129,7 +129,7 @@ const {{ service.name | caseLower }}{{ method.name | caseUcfirst }} = async ({ {
 {% for key, header in method.headers %}
             '{{ key }}': '{{ header }}',
 {% endfor %}
-        }, payload{% if method.type == 'location' %}, 'arraybuffer'{% endif %}){% if method.packaging %}.catch(err => {
+        }, payload{% if method.type == 'location' %}{% endif %}){% if method.packaging %}.catch(err => {
             fs.unlinkSync(archivePath);
             throw err
         });{% endif %}
@@ -172,7 +172,7 @@ const {{ service.name | caseLower }}{{ method.name | caseUcfirst }} = async ({ {
                 end
             });
             payload['{{ parameter.name }}'] = stream;
-            response = await client.call('{{ method.method | caseLower }}', apiPath, apiHeaders, payload{% if method.type == 'location' %}, 'arraybuffer'{% endif %});
+            response = await client.call('{{ method.method | caseLower }}', apiPath, apiHeaders, payload);
 
             if (onProgress) {
                 onProgress({
@@ -196,7 +196,7 @@ const {{ service.name | caseLower }}{{ method.name | caseUcfirst }} = async ({ {
 {% for key, header in method.headers %}
         '{{ key }}': '{{ header }}',
 {% endfor %}
-    }, payload{% if method.type == 'location' %}, 'arraybuffer'{% endif %});
+    }, payload);
 {% endif %}
 {% if method.packaging %}
 

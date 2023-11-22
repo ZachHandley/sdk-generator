@@ -1,6 +1,5 @@
 const os = require('os');
 const https = require("https");
-const axios = require("axios");
 const JSONbig = require("json-bigint")({ storeAsString: false });
 const FormData = require("form-data");
 const {{spec.title | caseUcfirst}}Exception = require("./exception.js");
@@ -99,78 +98,80 @@ class Client {
     path = "",
     headers = {},
     params = {},
-    responseType = "json"
   ) {
     headers = Object.assign({}, this.headers, headers);
 
-    let contentType = headers["content-type"].toLowerCase();
-
-    let formData = null;
-
-    if (contentType.startsWith("multipart/form-data")) {
-      const form = new FormData();
-
-      let flatParams = Client.flatten(params);
-
-      for (const key in flatParams) {
-        form.append(key, flatParams[key]);
-      }
-
-      headers = {
-        ...headers,
-        ...form.getHeaders(),
-      };
-
-      formData = form;
-    }
-
     let options = {
       method: method.toUpperCase(),
-      url: this.endpoint + path,
-      params: method.toUpperCase() === "GET" ? params : {},
       headers: headers,
-      data:
-        method.toUpperCase() === "GET" || contentType.startsWith("multipart/form-data") ? formData : params,
-      json: contentType.startsWith("application/json"),
-      transformRequest: method.toUpperCase() === "GET" || contentType.startsWith("multipart/form-data") ? undefined : (data) =>  JSONbig.stringify(data),
-      transformResponse: [ (data) =>  data ? JSONbig.parse(data) : data ],
-      responseType: responseType,
+      credentials: "include",
     };
+
+    if (method.toUpperCase() === "GET") {
+      if (Object.keys(params).length > 0) {
+        path =
+          path + "?" + new URLSearchParams(Client.flatten(params)).toString();
+      }
+    } else {
+      switch (headers["content-type"]) {
+        case "application/json":
+          options.body = JSONbig.stringify(params);
+          break;
+        case "multipart/form-data":
+          let formData = new FormData();
+
+          for (const key in params) {
+            if (Array.isArray(params[key])) {
+              params[key].forEach((value) => {
+                formData.append(key + "[]", value);
+              });
+            } else {
+              formData.append(key, params[key]);
+            }
+          }
+
+          options.body = formData;
+          delete headers["content-type"];
+          break;
+      }
+    }
+
     if (this.selfSigned == true) {
       // Allow self signed requests
-      options.httpsAgent = new https.Agent({ rejectUnauthorized: false });
+      process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;
     }
+
     try {
-      let response = await axios(options);
+      let data = null;
+      const response = await fetch(this.endpoint + path, options);
+
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        data = JSONbig.parse(await response.text());
+      } else {
+        data = {
+          message: await response.text(),
+        };
+      }
+
+      if (400 <= response.status) {
+        throw new {{spec.title | caseUcfirst}}Exception(
+          data?.message,
+          response.status,
+          data?.type,
+          data
+        );
+      }
+
       if (response.headers["set-cookie"]) {
         globalConfig.setCookie(response.headers["set-cookie"][0]);
       }
-      return response.data;
-    } catch (error) {
-      if ("response" in error && error.response !== undefined) {
-        if (error.response && "data" in error.response) {
-          if (typeof error.response.data === "string") {
-            throw new {{spec.title | caseUcfirst}}Exception(
-              error.response.data,
-              error.response.status,
-              error.response.data
-            );
-          } else {
-            throw new {{spec.title | caseUcfirst}}Exception(
-              error.response.data.message,
-              error.response.status,
-              error.response.data
-            );
-          }
-        } else {
-          throw new {{spec.title | caseUcfirst}}Exception(
-            error.response.statusText,
-            error.response.status,
-            error.response.data
-          );
-        }
+
+      return data;
+    } catch (e) {
+      if (e instanceof {{spec.title | caseUcfirst}}Exception) {
+        throw e;
       } else {
-        throw new {{spec.title | caseUcfirst}}Exception(error.message);
+        throw new {{spec.title | caseUcfirst}}Exception(e.message);
       }
     }
   }
